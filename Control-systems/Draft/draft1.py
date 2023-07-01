@@ -5,7 +5,7 @@ import time
 import socket
 import math
 import argparse
-import pymavlink import mavutil
+from pymavlink import mavutil
 
 ##### FUNCTIONS #####
 
