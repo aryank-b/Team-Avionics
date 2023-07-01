@@ -1,6 +1,7 @@
 #test file 1 for control code
 #### DEPENDENCIES #####
 from dronekit import connect,VehicleMode, LocationGlobalRelative, APIException
+from MAVProxy.modules.lib import mp_util
 import time
 import socket
 import math
@@ -8,6 +9,10 @@ import argparse
 from pymavlink import mavutil
 
 ##### FUNCTIONS #####
+def get_distance_accurate(loc1, loc2):
+    """Get ground distance between two locations."""
+    return mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1])
+    return math.sqrt(math.pow(mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1]),2)+math.pow(loc1.alt-loc2[2],2))
 
 def connectMyCopter() :
 
@@ -112,6 +117,19 @@ def arm_and_takeoff(aTargetAltitude):
     while not vehicle.is_armable:
         print(" Waiting for vehicle to initialise...")
         time.sleep(1)
+    if vehicle.armed:
+        print("DISARMING")
+        while not vehicle.mode=="STABILIZE":
+            print(" Waiting for mode change...")
+            print(" Mode: %s" % vehicle.mode.name)    # settable
+            vehicle.mode = VehicleMode("STABILIZE")
+            time.sleep(1)
+        while vehicle.armed:
+            print(" Waiting for disarming...")
+            print(" Mode: %s" % vehicle.mode.name)    # settable
+            time.sleep(1)
+            vehicle.armed =False
+        time.sleep(5)
 
     print("Arming motors")
     vehicle.wait_for_mode("GUIDED")
@@ -161,16 +179,16 @@ def goto_altitude(aTargetAltitude):
             break
         time.sleep(1)
 
-def simple_goto_for(epsilon=1,gpoint = (-35.361354, 149.165218, 20)):
+def wait_simple_goto(lat =-35.361354,lon = 149.165218,alt= 7,epsilon=1):
     print("Going towards first point for 30 seconds ...")
-    point = LocationGlobalRelative(gpoint[0],gpoint[1],gpoint[2])
+    point = LocationGlobalRelative(lat,lon,alt)
     vehicle.simple_goto(point)
     # Assuming you have a loop running to continuously monitor the drone's position
     while True:
-        current_location = vehicle.location.global_relative_frame
+        current_location = vehicle.location.global_frame
 
         # Calculate the distance between the current location and target location
-        distance = current_location.distance_to(point)
+        distance = get_distance_accurate(current_location,(lat,lon,alt))
 
         # Set a threshold distance, below which we consider the drone has reached the location
         threshold_distance = epsilon  # Adjust this value as per your requirement
@@ -182,6 +200,7 @@ def simple_goto_for(epsilon=1,gpoint = (-35.361354, 149.165218, 20)):
 
         # Optionally, you can print the current distance for debugging purposes
         print("Distance to target: ", distance)
+        time.sleep(1)
 
     # sleep so we can see the change in map
 #Send a velocity command with +x being the heading of the drone.
@@ -224,12 +243,39 @@ def land_close():
     # target_location = LocationGlobalRelative(home_location.lat, home_location.lon, home_location.alt)
 
     # time.sleep(30)
+    print("waiting to land")
+    vehicle.wait_for_alt(0.01)
+    time.sleep(1)
     #Close vehicle object before exiting script
- #   print("\nClose vehicle object")
- #   vehicle.close()
+    print("\nClose vehicle object")
+    vehicle.close()
 
     print("Completed")
 
+### STAGES SCRIPT ###
+
+def stage_1():
+    print("Stage-1 Started")
+    wait_simple_goto(-35.3621759,149.1650674)
+    print("waypoint reached:",1)
+    for i in range(3):
+        # obtain point from qr function using the following
+        # search qr by bounding box 
+        # move towards it 
+        # lower altitude if needed 
+        # scan
+        if (i == 1):
+            wait_simple_goto(-35.3621759,149.1650674)
+        else : 
+            wait_simple_goto()
+    # Code to be executed
+        print("waypoint reached:", i+2)
+    ##get direction from the next qr code
+    ## process to acheive Vx Vy Vz
+    send_local_ned_velocity(15,50,0)
+    for i in range(5):
+        time.sleep(1)
+        print("time moved : ",i+1)
 ##### SCRIPT #####
 # connecting
 vehicle = connectMyCopter()
@@ -245,6 +291,6 @@ arm_and_takeoff(7)
 print("Set default/target airspeed to 3")
 vehicle.airspeed = 3
 
-simple_goto_for()
+stage_1()
 
 land_close()
