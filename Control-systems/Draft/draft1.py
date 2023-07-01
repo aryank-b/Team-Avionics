@@ -107,11 +107,15 @@ def arm_and_takeoff(aTargetAltitude):
 
     print("Basic pre-arm checks")
     # Don't try to arm until autopilot is ready
+    vehicle.wait_for_armable()
+    print("used wait_for_armable")
     while not vehicle.is_armable:
         print(" Waiting for vehicle to initialise...")
         time.sleep(1)
 
     print("Arming motors")
+    vehicle.wait_for_mode("GUIDED")
+    print("used wait_for_mode")
     # Copter should arm in GUIDED mode
     while not vehicle.mode=="GUIDED":
         print(" Waiting for mode change...")
@@ -142,13 +146,44 @@ def arm_and_takeoff(aTargetAltitude):
             break
         time.sleep(1)
 
-def simple_goto_for(tsec):
+def goto_altitude(aTargetAltitude):
+    print("Taking off!")
+    vehicle.simple_takeoff(aTargetAltitude)  # Take off to target altitude
+
+    # Wait until the vehicle reaches a safe height before processing the goto
+    #  (otherwise the command after Vehicle.simple_takeoff will execute
+    #   immediately).
+    while True:
+        print(" Altitude: ", vehicle.location.global_relative_frame.alt)
+        # Break and return from function just below target altitude.
+        if vehicle.location.global_relative_frame.alt >= aTargetAltitude * 0.95:
+            print("Reached target altitude")
+            break
+        time.sleep(1)
+
+def simple_goto_for(epsilon=1,gpoint = (-35.361354, 149.165218, 20)):
     print("Going towards first point for 30 seconds ...")
-    point = LocationGlobalRelative(-35.361354, 149.165218, 20)
+    point = LocationGlobalRelative(gpoint[0],gpoint[1],gpoint[2])
     vehicle.simple_goto(point)
+    # Assuming you have a loop running to continuously monitor the drone's position
+    while True:
+        current_location = vehicle.location.global_relative_frame
+
+        # Calculate the distance between the current location and target location
+        distance = current_location.distance_to(point)
+
+        # Set a threshold distance, below which we consider the drone has reached the location
+        threshold_distance = epsilon  # Adjust this value as per your requirement
+
+        # Check if the drone has reached the target location
+        if distance < threshold_distance:
+            print("Drone has reached the target location.")
+            break
+
+        # Optionally, you can print the current distance for debugging purposes
+        print("Distance to target: ", distance)
 
     # sleep so we can see the change in map
-    time.sleep(tsec)
 #Send a velocity command with +x being the heading of the drone.
 def send_local_ned_velocity(velocity_x, velocity_y, velocity_z):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
@@ -182,20 +217,21 @@ def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
 def land_close():
     print("Returning to Launch")
     vehicle.mode = VehicleMode("RTL")
-    time.sleep(30)
-    #Close vehicle object before exiting script
-    print("\nClose vehicle object")
-    vehicle.close()
+    # # Get the home location of the drone
+    # home_location = vehicle.home_location
 
-    # Shut down simulator if it was started.
-    if sitl is not None:
-        sitl.stop()
+    # # Set the target location to the home location
+    # target_location = LocationGlobalRelative(home_location.lat, home_location.lon, home_location.alt)
+
+    # time.sleep(30)
+    #Close vehicle object before exiting script
+ #   print("\nClose vehicle object")
+ #   vehicle.close()
 
     print("Completed")
 
 ##### SCRIPT #####
 # connecting
-sitl = None
 vehicle = connectMyCopter()
 #time.sleep(5)
 # check vehicle state
@@ -209,6 +245,6 @@ arm_and_takeoff(7)
 print("Set default/target airspeed to 3")
 vehicle.airspeed = 3
 
-simple_goto_for(30)
+simple_goto_for()
 
 land_close()
