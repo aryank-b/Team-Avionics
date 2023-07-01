@@ -14,11 +14,12 @@ def connectMyCopter() :
     args = parser.parse_args()
 
     connection_string = args.connect
-
     if not connection_string:
-        import dronekit_sitl
-        sitl = dronekit_sitl.start_default()
-        connection_string = sitl.connection_string()
+        connection_string = 'tcp:192.168.56.1:5762' 
+    # if not connection_string:
+    #     import dronekit_sitl
+    #     sitl = dronekit_sitl.start_default()
+    #     connection_string = sitl.connection_string()
 
     try:
         print("\nConnecting to vehicle on: %s" % connection_string)
@@ -110,12 +111,19 @@ def arm_and_takeoff(aTargetAltitude):
 
     print("Arming motors")
     # Copter should arm in GUIDED mode
-    vehicle.mode = VehicleMode("GUIDED")
+    while not vehicle.mode=="GUIDED":
+        print(" Waiting for mode change...")
+        print(" Mode: %s" % vehicle.mode.name)    # settable
+        vehicle.mode = VehicleMode("GUIDED")
+        time.sleep(1)
     vehicle.armed = True
 
+
+    
     # Confirm vehicle armed before attempting to take off
     while not vehicle.armed:
         print(" Waiting for arming...")
+        print(" Mode: %s" % vehicle.mode.name)    # settable
         time.sleep(1)
 
     print("Taking off!")
@@ -132,18 +140,33 @@ def arm_and_takeoff(aTargetAltitude):
             break
         time.sleep(1)
 
-def simple_goto(tsec);
+def simple_goto_for(tsec):
     print("Going towards first point for 30 seconds ...")
-    point1 = LocationGlobalRelative(-35.361354, 149.165218, 20)
-    vehicle.simple_goto(point1)
+    point = LocationGlobalRelative(-35.361354, 149.165218, 20)
+    vehicle.simple_goto(point)
 
     # sleep so we can see the change in map
+    time.sleep(tsec)
+
+def land_close():
+    print("Returning to Launch")
+    vehicle.mode = VehicleMode("RTL")
     time.sleep(30)
+    #Close vehicle object before exiting script
+    print("\nClose vehicle object")
+    vehicle.close()
+
+    # Shut down simulator if it was started.
+    if sitl is not None:
+        sitl.stop()
+
+    print("Completed")
 
 ##### SCRIPT #####
 # connecting
 sitl = None
 vehicle = connectMyCopter()
+#time.sleep(5)
 # check vehicle state
 vehicle.wait_ready('autopilot_version')
 get_all_attributes()
@@ -155,14 +178,6 @@ arm_and_takeoff(7)
 print("Set default/target airspeed to 3")
 vehicle.airspeed = 3
 
-while
+simple_goto_for(30)
 
-#Close vehicle object before exiting script
-print("\nClose vehicle object")
-vehicle.close()
-
-# Shut down simulator if it was started.
-if sitl is not None:
-    sitl.stop()
-
-print("Completed")
+land_close()
