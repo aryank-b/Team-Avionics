@@ -126,6 +126,7 @@ def arm_and_takeoff(aTargetAltitude):
             time.sleep(1)
         while vehicle.armed:
             print(" Waiting for disarming...")
+            #rtl_land()
             print(" Mode: %s" % vehicle.mode.name)    # settable
             time.sleep(1)
             vehicle.armed =False
@@ -219,7 +220,7 @@ def send_local_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
         time.sleep(1)
 
 #Send a velocity command with +x being true NORTH of Earth.
-def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
+def send_global_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0,  # time_boot_ms
         0, 0,  # target_system, target_component
@@ -229,11 +230,11 @@ def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
         velocity_x, velocity_y, velocity_z,  # x, y, z velocity
         0, 0, 0,  # x, y, z acceleration 
         0, 0)  # yaw, yaw_rate
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
-
-def land_close():
+def rtl_land():
     print("Returning to Launch")
     vehicle.mode = VehicleMode("RTL")
     # # Get the home location of the drone
@@ -246,6 +247,20 @@ def land_close():
     print("waiting to land")
     vehicle.wait_for_alt(0.01)
     time.sleep(1)
+
+def land_close():
+    print("Returning to Launch")
+    vehicle.mode = VehicleMode("RTL")
+    # # Get the home location of the drone
+    # home_location = vehicle.home_location
+
+    # # Set the target location to the home location
+    # target_location = LocationGlobalRelative(home_location.lat, home_location.lon, home_location.alt)
+
+    # time.sleep(30)
+    print("waiting to land")
+    while vehicle.armed:
+        time.sleep(1)
     #Close vehicle object before exiting script
     print("\nClose vehicle object")
     vehicle.close()
@@ -256,7 +271,11 @@ def land_close():
 
 def stage_1():
     print("Stage-1 Started")
-    wait_simple_goto(-35.3621759,149.1650674)
+    wait_simple_goto(19.133652, 72.913380)
+    pt = [0,0,0]
+    pt[0] = (19.133934, 72.913124)
+    pt[1] = (19.134114, 72.913514)
+    pt[2] = (19.134257, 72.913099)
     print("waypoint reached:",1)
     for i in range(3):
         # obtain point from qr function using the following
@@ -264,15 +283,17 @@ def stage_1():
         # move towards it 
         # lower altitude if needed 
         # scan
-        if (i == 1):
-            wait_simple_goto(-35.3621759,149.1650674)
-        else : 
-            wait_simple_goto()
+        wait_simple_goto(pt[i][0],pt[i][1])
+        # if (i == 1):
+        #     #wait_simple_goto(-35.3621759,149.1650674)
+            
+        # else : 
+        #     wait_simple_goto()
     # Code to be executed
         print("waypoint reached:", i+2)
     ##get direction from the next qr code
     ## process to acheive Vx Vy Vz
-    send_local_ned_velocity(1,3,0,10)
+    send_global_ned_velocity(1,-3,0,10)
     for i in range(5):
         time.sleep(1)
         print("time moved : ",i+1)
