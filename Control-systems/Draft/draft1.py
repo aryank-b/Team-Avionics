@@ -204,7 +204,7 @@ def wait_simple_goto(lat =-35.361354,lon = 149.165218,alt= 7,epsilon=1):
 
     # sleep so we can see the change in map
 #Send a velocity command with +x being the heading of the drone.
-def send_local_ned_velocity(velocity_x, velocity_y, velocity_z):
+def send_local_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0,  # time_boot_ms
         0, 0,  # target_system, target_component
@@ -214,9 +214,9 @@ def send_local_ned_velocity(velocity_x, velocity_y, velocity_z):
         velocity_x, velocity_y, velocity_z,  # x, y, z velocity
         0, 0, 0,  # x, y, z acceleration 
         0, 0)  # yaw, yaw_rate
-
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
 
 #Send a velocity command with +x being true NORTH of Earth.
 def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
@@ -272,7 +272,7 @@ def stage_1():
         print("waypoint reached:", i+2)
     ##get direction from the next qr code
     ## process to acheive Vx Vy Vz
-    send_local_ned_velocity(15,50,0)
+    send_local_ned_velocity(1,3,0,10)
     for i in range(5):
         time.sleep(1)
         print("time moved : ",i+1)
