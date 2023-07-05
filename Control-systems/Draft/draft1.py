@@ -1,6 +1,7 @@
 #test file 1 for control code
 #### DEPENDENCIES #####
 from dronekit import connect,VehicleMode, LocationGlobalRelative, APIException
+from MAVProxy.modules.lib import mp_util
 import time
 import socket
 import math
@@ -8,6 +9,10 @@ import argparse
 from pymavlink import mavutil
 
 ##### FUNCTIONS #####
+def get_distance_accurate(loc1, loc2):
+    """Get ground distance between two locations."""
+    return mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1])
+    return math.sqrt(math.pow(mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1]),2)+math.pow(loc1.alt-loc2[2],2))
 
 def connectMyCopter() :
 
@@ -107,11 +112,29 @@ def arm_and_takeoff(aTargetAltitude):
 
     print("Basic pre-arm checks")
     # Don't try to arm until autopilot is ready
+    vehicle.wait_for_armable()
+    print("used wait_for_armable")
     while not vehicle.is_armable:
         print(" Waiting for vehicle to initialise...")
         time.sleep(1)
+    if vehicle.armed:
+        print("DISARMING")
+        while not vehicle.mode=="STABILIZE":
+            print(" Waiting for mode change...")
+            print(" Mode: %s" % vehicle.mode.name)    # settable
+            vehicle.mode = VehicleMode("STABILIZE")
+            time.sleep(1)
+        while vehicle.armed:
+            print(" Waiting for disarming...")
+            #rtl_land()
+            print(" Mode: %s" % vehicle.mode.name)    # settable
+            time.sleep(1)
+            vehicle.armed =False
+        time.sleep(5)
 
     print("Arming motors")
+    vehicle.wait_for_mode("GUIDED")
+    print("used wait_for_mode")
     # Copter should arm in GUIDED mode
     while not vehicle.mode=="GUIDED":
         print(" Waiting for mode change...")
@@ -142,15 +165,47 @@ def arm_and_takeoff(aTargetAltitude):
             break
         time.sleep(1)
 
-def simple_goto_for(tsec):
+def goto_altitude(aTargetAltitude):
+    print("Taking off!")
+    vehicle.simple_takeoff(aTargetAltitude)  # Take off to target altitude
+
+    # Wait until the vehicle reaches a safe height before processing the goto
+    #  (otherwise the command after Vehicle.simple_takeoff will execute
+    #   immediately).
+    while True:
+        print(" Altitude: ", vehicle.location.global_relative_frame.alt)
+        # Break and return from function just below target altitude.
+        if vehicle.location.global_relative_frame.alt >= aTargetAltitude * 0.95:
+            print("Reached target altitude")
+            break
+        time.sleep(1)
+
+def wait_simple_goto(lat =-35.361354,lon = 149.165218,alt= 7,epsilon=1):
     print("Going towards first point for 30 seconds ...")
-    point = LocationGlobalRelative(-35.361354, 149.165218, 20)
+    point = LocationGlobalRelative(lat,lon,alt)
     vehicle.simple_goto(point)
+    # Assuming you have a loop running to continuously monitor the drone's position
+    while True:
+        current_location = vehicle.location.global_frame
+
+        # Calculate the distance between the current location and target location
+        distance = get_distance_accurate(current_location,(lat,lon,alt))
+
+        # Set a threshold distance, below which we consider the drone has reached the location
+        threshold_distance = epsilon  # Adjust this value as per your requirement
+
+        # Check if the drone has reached the target location
+        if distance < threshold_distance:
+            print("Drone has reached the target location.")
+            break
+
+        # Optionally, you can print the current distance for debugging purposes
+        print("Distance to target: ", distance)
+        time.sleep(1)
 
     # sleep so we can see the change in map
-    time.sleep(tsec)
 #Send a velocity command with +x being the heading of the drone.
-def send_local_ned_velocity(velocity_x, velocity_y, velocity_z):
+def send_local_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0,  # time_boot_ms
         0, 0,  # target_system, target_component
@@ -160,12 +215,12 @@ def send_local_ned_velocity(velocity_x, velocity_y, velocity_z):
         velocity_x, velocity_y, velocity_z,  # x, y, z velocity
         0, 0, 0,  # x, y, z acceleration 
         0, 0)  # yaw, yaw_rate
-
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
 
 #Send a velocity command with +x being true NORTH of Earth.
-def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
+def send_global_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0,  # time_boot_ms
         0, 0,  # target_system, target_component
@@ -175,27 +230,75 @@ def send_global_ned_velocity(velocity_x, velocity_y, velocity_z):
         velocity_x, velocity_y, velocity_z,  # x, y, z velocity
         0, 0, 0,  # x, y, z acceleration 
         0, 0)  # yaw, yaw_rate
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
 
-    vehicle.send_mavlink(msg)
-    vehicle.flush()
+def rtl_land():
+    print("Returning to Launch")
+    vehicle.mode = VehicleMode("RTL")
+    # # Get the home location of the drone
+    # home_location = vehicle.home_location
+
+    # # Set the target location to the home location
+    # target_location = LocationGlobalRelative(home_location.lat, home_location.lon, home_location.alt)
+
+    # time.sleep(30)
+    print("waiting to land")
+    vehicle.wait_for_alt(0.01)
+    time.sleep(1)
 
 def land_close():
     print("Returning to Launch")
     vehicle.mode = VehicleMode("RTL")
-    time.sleep(30)
+    # # Get the home location of the drone
+    # home_location = vehicle.home_location
+
+    # # Set the target location to the home location
+    # target_location = LocationGlobalRelative(home_location.lat, home_location.lon, home_location.alt)
+
+    # time.sleep(30)
+    print("waiting to land")
+    while vehicle.armed:
+        time.sleep(1)
     #Close vehicle object before exiting script
     print("\nClose vehicle object")
     vehicle.close()
 
-    # Shut down simulator if it was started.
-    if sitl is not None:
-        sitl.stop()
-
     print("Completed")
 
+### STAGES SCRIPT ###
+
+def stage_1():
+    print("Stage-1 Started")
+    wait_simple_goto(19.133652, 72.913380)
+    pt = [0,0,0]
+    pt[0] = (19.133934, 72.913124)
+    pt[1] = (19.134114, 72.913514)
+    pt[2] = (19.134257, 72.913099)
+    print("waypoint reached:",1)
+    for i in range(3):
+        # obtain point from qr function using the following
+        # search qr by bounding box 
+        # move towards it 
+        # lower altitude if needed 
+        # scan
+        wait_simple_goto(pt[i][0],pt[i][1])
+        # if (i == 1):
+        #     #wait_simple_goto(-35.3621759,149.1650674)
+            
+        # else : 
+        #     wait_simple_goto()
+    # Code to be executed
+        print("waypoint reached:", i+2)
+    ##get direction from the next qr code
+    ## process to acheive Vx Vy Vz
+    send_global_ned_velocity(1,-3,0,10)
+    for i in range(5):
+        time.sleep(1)
+        print("time moved : ",i+1)
 ##### SCRIPT #####
 # connecting
-sitl = None
 vehicle = connectMyCopter()
 #time.sleep(5)
 # check vehicle state
@@ -209,6 +312,6 @@ arm_and_takeoff(7)
 print("Set default/target airspeed to 3")
 vehicle.airspeed = 3
 
-simple_goto_for(30)
+stage_1()
 
 land_close()
