@@ -1,16 +1,92 @@
 #test file 1 for control code
 #### DEPENDENCIES #####
 from dronekit import connect,VehicleMode, LocationGlobalRelative, APIException
-from MAVProxy.modules.lib import mp_util
 import time
 import socket
 import math
 import argparse
 from pymavlink import mavutil
+import cv2
+from pyzbar.pyzbar import decode, ZBarSymbol
+import numpy as np
+import sys
 
 ##### FUNCTIONS #####
+
+def qr_read():
+    delay = 1
+    window_name = 'frame'
+
+    cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        sys.exit()
+
+    while True:
+        ret, frame = cap.read()
+        flag = False
+        #cv2.imshow(window_name, frame)
+        grayFrame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        (thresh, blackAndWhiteFrame) = cv2.threshold(grayFrame, 127, 255, cv2.THRESH_BINARY)
+        if ret:
+            for d in decode(blackAndWhiteFrame, symbols=[ZBarSymbol.QRCODE]):
+                s = d.data.decode()
+                k,n, flag = get_coords(s)
+                blackAndWhiteFrame = cv2.rectangle(blackAndWhiteFrame, (d.rect.left, d.rect.top),
+                                    (d.rect.left + d.rect.width, d.rect.top + d.rect.height), (0, 255, 0), 3)
+                blackAndWhiteFrame = cv2.putText(blackAndWhiteFrame, s, (d.rect.left, d.rect.top + d.rect.height),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2, cv2.LINE_AA)
+                cx = int(d.rect.left + d.rect.width/2)
+                cy = int(d.rect.top + d.rect.height/2)
+                blackAndWhiteFrame = cv2.circle(blackAndWhiteFrame, (cx, cy), 5, (25, 25, 25), 3)
+                print(cx, cy)
+            cv2.imshow("bw frame", blackAndWhiteFrame)
+
+            for d in decode(frame, symbols=[ZBarSymbol.QRCODE]):
+                s = d.data.decode()
+                k,n, flag = get_coords(s)
+                frame = cv2.rectangle(frame, (d.rect.left, d.rect.top),
+                                    (d.rect.left + d.rect.width, d.rect.top + d.rect.height), (0, 255, 0), 3)
+                frame = cv2.putText(frame, s, (d.rect.left, d.rect.top + d.rect.height),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2, cv2.LINE_AA)
+                cx = int(d.rect.left + d.rect.width/2)
+                cy = int(d.rect.top + d.rect.height/2)
+                frame = cv2.circle(frame, (cx, cy), 5, (25, 25, 25), 3)
+                print(cx, cy)
+            cv2.imshow('frame', frame)
+
+        if (cv2.waitKey(delay) & 0xFF == ord('q')) or flag:
+            break
+
+    cv2.destroyWindow('frame')
+    cv2.destroyWindow('bw frame')
+    return k,n
+
+def get_coords(s):
+    coords = []
+    if(s!=''):
+        x = s.split(",")
+        n = np.size(x)
+        if(n==4):
+            coords.append(float(s.split(",")[0][2:]))
+            coords.append(float(s.split(",")[1][:-1]))
+            coords.append(float(s.split(",")[2][1:]))
+            coords.append(float(s.split(",")[3][:-2]))
+            coords = np.array(coords)
+        elif(n==2):
+            coords.append(float(s.split(",")[0][1:]))
+            coords.append(float(s.split(",")[1][:-1]))
+            coords = np.array(coords)
+        return coords,n, True
+    else:
+        return coords,n, False
 def get_distance_accurate(loc1, loc2):
     """Get ground distance between two locations."""
+    dist1 = loc1.lat - loc2[0]
+    dist1 = 111111.1 * dist1 
+    dist2 = loc1.lon - loc2[1]
+    dist2 = 111111.1 * dist2 
+    return math.sqrt(dist1**2 + dist2**2)
     return mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1])
     return math.sqrt(math.pow(mp_util.gps_distance(loc1.lat, loc1.lon, loc2[0], loc2[1]),2)+math.pow(loc1.alt-loc2[2],2))
 
@@ -220,6 +296,22 @@ def send_local_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
         time.sleep(1)
 
 #Send a velocity command with +x being true NORTH of Earth.
+def send_local_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
+    msg = vehicle.message_factory.set_position_target_local_ned_encode(
+        0,  # time_boot_ms
+        0, 0,  # target_system, target_component
+        mavutil.mavlink.MAV_FRAME_BODY_OFFSET_NED,  # frame
+        0b0000111111000111,  # type_mask (only speeds enabled)
+        0, 0, 0,  # x, y, z positions 
+        velocity_x, velocity_y, velocity_z,  # x, y, z velocity
+        0, 0, 0,  # x, y, z acceleration 
+        0, 0)  # yaw, yaw_rate
+    for x in range(0,duration):
+        vehicle.send_mavlink(msg)
+        time.sleep(1)
+        print("time moved : ",x+1)
+    
+#Send a velocity command with +x being true NORTH of Earth.
 def send_global_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0,  # time_boot_ms
@@ -233,6 +325,7 @@ def send_global_ned_velocity(velocity_x, velocity_y, velocity_z,duration):
     for x in range(0,duration):
         vehicle.send_mavlink(msg)
         time.sleep(1)
+        print("time moved : ",x+1)
 
 def rtl_land():
     print("Returning to Launch")
@@ -269,7 +362,7 @@ def land_close():
 
 ### STAGES SCRIPT ###
 
-def stage_1():
+def stage_1(alt):
     print("Stage-1 Started")
     wait_simple_goto(19.133652, 72.913380)
     pt = [0,0,0]
@@ -283,20 +376,15 @@ def stage_1():
         # move towards it 
         # lower altitude if needed 
         # scan
-        wait_simple_goto(pt[i][0],pt[i][1])
-        # if (i == 1):
-        #     #wait_simple_goto(-35.3621759,149.1650674)
-            
-        # else : 
-        #     wait_simple_goto()
-    # Code to be executed
+        pt, n = qr_read()
+        if(n==2):
+            wait_simple_goto(pt[0],pt[1])
+        # wait_simple_goto(pt[i][0],pt[i][1],alt)
         print("waypoint reached:", i+2)
     ##get direction from the next qr code
     ## process to acheive Vx Vy Vz
     send_global_ned_velocity(1,-3,0,10)
-    for i in range(5):
-        time.sleep(1)
-        print("time moved : ",i+1)
+
 ##### SCRIPT #####
 # connecting
 vehicle = connectMyCopter()
@@ -311,7 +399,7 @@ arm_and_takeoff(7)
 #changing default airspeed for goto
 print("Set default/target airspeed to 3")
 vehicle.airspeed = 3
-
-stage_1()
+alt_s1 = 2
+stage_1(alt_s1)
 
 land_close()
